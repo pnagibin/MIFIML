@@ -37,7 +37,7 @@ import json
 import re
 import glob
 
-def find_hidden_traps(notebook_path):
+def find_all_hidden_traps(notebook_path):
     try:
         with open(notebook_path, 'r', encoding='utf-8') as f:
             nb = json.load(f)
@@ -47,19 +47,31 @@ def find_hidden_traps(notebook_path):
 
     print(f"\nАнализ файла: {notebook_path}\n" + "="*50)
     
+    # Максимально полный словарь паттернов уязвимостей
     patterns = {
         "1. HTML-комментарий": 
             r'<!--(?P<text>.*?)-->',
-        "2. Скрытый CSS-стиль (display:none, невидимость, белый текст)": 
-            r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^>]*>(?P<text>.*?)</\1>',
+            
+        "2. CSS-трюки (невидимость, белый цвет, прозрачность, сдвиг за экран)": 
+            r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>(?P<text>.*?)</\1>',
+            
         "3. HTML атрибут 'hidden'": 
             r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>(?P<text>.*?)</\1>',
+            
         "4. Белый цвет текста (<font>)": 
-            r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff)["\']?[^>]*>(?P<text>.*?)</font>',
-        "5. Alt-текст Markdown картинки": 
+            r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff|transparent)["\']?[^>]*>(?P<text>.*?)</font>',
+            
+        "5. Скрытый текст в LaTeX (белый или прозрачный)":
+            r'\\(?:textcolor|color)\s*\{\s*(?:white|\#ffffff|\#fff|transparent)\s*\}\s*\{(?P<text>.*?)\}',
+            
+        "6. Всплывающая подсказка (title) в Markdown ссылке":
+            r'\[[^\]]*\]\([^)]+\s+["\'](?P<text>[^"\']+)["\']\)',
+            
+        "7. Alt-текст картинок Markdown": 
             r'!\[(?P<text>.*?)\]\([^)]+\)',
-        "6. Alt-текст HTML картинки": 
-            r'<img[^>]+alt\s*=\s*["\'](?P<text>.*?)["\'][^>]*>'
+            
+        "8. Скрытые атрибуты HTML (alt, title, aria-label)": 
+            r'<(?:img|div|span|a|p)[^>]+(?:alt|title|aria-label)\s*=\s*["\'](?P<text>[^"\']+)["\'][^>]*>'
     }
 
     trap_count = 0
@@ -87,13 +99,13 @@ def find_hidden_traps(notebook_path):
         print("="*50)
         print(f"🚨 Всего найдено подозрительных элементов: {trap_count}")
 
-# Автоматический запуск для всех .ipynb файлов в текущей папке
+# Автоматический запуск
 ipynb_files = glob.glob("*.ipynb")
 if not ipynb_files:
     print("❌ Файлы .ipynb не найдены в текущей директории.")
 else:
     for file in ipynb_files:
-        find_hidden_traps(file)
+        find_all_hidden_traps(file)
 
 ```
 
@@ -120,7 +132,7 @@ import json
 import re
 import glob
 
-def clean_all_traps(filepath):
+def clean_all_traps_advanced(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             nb = json.load(f)
@@ -135,24 +147,32 @@ def clean_all_traps(filepath):
             # 1. Удаление HTML-комментариев
             text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
             
-            # 2. Удаление скрытых блоков (display: none, невидимость и т.д.)
-            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
+            # 2. Удаление сложных CSS-блоков (сдвиги, невидимость, прозрачность и т.д.)
+            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
             # 3. Удаление тегов с атрибутом hidden
             text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
-            # 4. Удаление белого шрифта
-            text = re.sub(r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff)["\']?[^>]*>.*?</font>', '', text, flags=re.IGNORECASE | re.DOTALL)
+            # 4. Удаление белого/прозрачного шрифта <font>
+            text = re.sub(r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff|transparent)["\']?[^>]*>.*?</font>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
-            # 5. Очистка alt-текста картинок Markdown: ![Любой текст](link.jpg) -> ![image](link.jpg)
+            # 5. Удаление невидимых LaTeX формул/текстов (\textcolor{white}{...})
+            text = re.sub(r'\\(?:textcolor|color)\s*\{\s*(?:white|\#ffffff|\#fff|transparent)\s*\}\s*\{.*?\}', '', text, flags=re.IGNORECASE | re.DOTALL)
+            
+            # 6. Очистка всплывающих подсказок (title) из Markdown-ссылок
+            # Было: [текст](url "Секретный промпт") -> Стало: [текст](url)
+            text = re.sub(r'(\[[^\]]*\]\([^)\s]+)\s+["\'][^"\']+["\'](\))', r'\1\2', text)
+            
+            # 7. Очистка alt-текста у Markdown-картинок -> ![image](link.jpg)
             text = re.sub(r'!\[.*?\](\(.*?\))', r'![image]\1', text)
             
-            # 6. Очистка alt-текста HTML-картинок
-            def replace_html_alt(match):
-                img_tag = match.group(0)
-                return re.sub(r'alt\s*=\s*["\'].*?["\']', 'alt="image"', img_tag, flags=re.IGNORECASE)
+            # 8. Очистка атрибутов (alt, title, aria-label) у HTML-тегов -> заменяем на "image" или "info"
+            def clean_html_attributes(match):
+                tag = match.group(0)
+                tag = re.sub(r'(alt|title|aria-label)\s*=\s*["\'].*?["\']', r'\1="info"', tag, flags=re.IGNORECASE)
+                return tag
             
-            text = re.sub(r'<img[^>]+>', replace_html_alt, text, flags=re.IGNORECASE)
+            text = re.sub(r'<(?:img|div|span|a|p)[^>]+>', clean_html_attributes, text, flags=re.IGNORECASE)
             
             # Сохраняем очищенный текст
             cell['source'] = [text]
@@ -162,7 +182,7 @@ def clean_all_traps(filepath):
     with open(cleaned_filepath, 'w', encoding='utf-8') as f:
         json.dump(nb, f, ensure_ascii=False, indent=2)
         
-    print(f"✅ Файл очищен от ловушек и сохранен как: {cleaned_filepath}")
+    print(f"✅ Файл полностью очищен от всех видов ловушек и сохранен как: {cleaned_filepath}")
 
 # Ищем все файлы .ipynb в папке, исключая уже очищенные
 ipynb_files = [f for f in glob.glob("*.ipynb") if not f.endswith("_cleaned.ipynb")]
@@ -171,7 +191,7 @@ if not ipynb_files:
     print("❌ Файлы .ipynb для очистки не найдены.")
 else:
     for file in ipynb_files:
-        clean_all_traps(file)
+        clean_all_traps_advanced(file)
 
 ```
 
