@@ -47,31 +47,23 @@ def find_all_hidden_traps(notebook_path):
 
     print(f"\nАнализ файла: {notebook_path}\n" + "="*50)
     
-    # Максимально полный словарь паттернов уязвимостей
     patterns = {
         "1. HTML-комментарий": 
-            r'<!--(?P<text>.*?)-->',
-            
-        "2. CSS-трюки (невидимость, белый цвет, прозрачность, сдвиг за экран)": 
-            r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>(?P<text>.*?)</\1>',
-            
+            r'<!--.*?-->',
+        "2. CSS-трюки (невидимость, прозрачность, сдвиг)": 
+            r'<[a-zA-Z0-9]+[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>(?:.*?</[a-zA-Z0-9]+>)?',
         "3. HTML атрибут 'hidden'": 
-            r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>(?P<text>.*?)</\1>',
-            
+            r'<[a-zA-Z0-9]+[^>]*\bhidden\b[^>]*>(?:.*?</[a-zA-Z0-9]+>)?',
         "4. Белый цвет текста (<font>)": 
-            r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff|transparent)["\']?[^>]*>(?P<text>.*?)</font>',
-            
-        "5. Скрытый текст в LaTeX (белый или прозрачный)":
-            r'\\(?:textcolor|color)\s*\{\s*(?:white|\#ffffff|\#fff|transparent)\s*\}\s*\{(?P<text>.*?)\}',
-            
-        "6. Всплывающая подсказка (title) в Markdown ссылке":
-            r'\[[^\]]*\]\([^)]+\s+["\'](?P<text>[^"\']+)["\']\)',
-            
+            r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff|transparent)["\']?[^>]*>.*?</font>',
+        "5. Скрытый текст в LaTeX":
+            r'\\(?:textcolor|color)\s*\{\s*(?:white|\#ffffff|\#fff|transparent)\s*\}\s*\{.*?\}',
+        "6. Всплывающая подсказка (title) в ссылке":
+            r'\[[^\]]*\]\([^)]+\s+["\'][^"\']+["\']\)',
         "7. Alt-текст картинок Markdown": 
-            r'!\[(?P<text>.*?)\]\([^)]+\)',
-            
-        "8. Скрытые атрибуты HTML (alt, title, aria-label)": 
-            r'<(?:img|div|span|a|p)[^>]+(?:alt|title|aria-label)\s*=\s*["\'](?P<text>[^"\']+)["\'][^>]*>'
+            r'!\[.*?\]\([^)]+\)',
+        "8. Подозрительные HTML-атрибуты (note, data-*, alt, title)": 
+            r'<[a-zA-Z0-9]+[^>]+(?:alt|title|aria-label|note|data-[a-zA-Z0-9\-]+)\s*=\s*["\'][^"\']+["\'][^>]*>'
     }
 
     trap_count = 0
@@ -82,15 +74,20 @@ def find_all_hidden_traps(notebook_path):
             found_in_cell = []
 
             for trap_type, pattern in patterns.items():
+                # Теперь мы захватываем всё совпадение целиком (match.group(0))
                 for match in re.finditer(pattern, source, flags=re.IGNORECASE | re.DOTALL):
-                    text = match.group('text').strip()
+                    text = match.group(0).strip()
+                    # Если тег слишком длинный, обрезаем для красоты отчета
+                    if len(text) > 300:
+                        text = text[:300] + " ... [ОБРЕЗАНО]"
                     if text: 
                         found_in_cell.append(f"  [{trap_type}]:\n    > {text}\n")
                         trap_count += 1
             
             if found_in_cell:
                 print(f"⚠️ Найдено в ячейке #{i+1} (Markdown):")
-                for item in found_in_cell:
+                # Используем set, чтобы избежать дубликатов, если сработали два паттерна на один тег
+                for item in set(found_in_cell):
                     print(item)
 
     if trap_count == 0:
@@ -147,11 +144,15 @@ def clean_all_traps_advanced(filepath):
             # 1. Удаление HTML-комментариев
             text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
             
-            # 2. Удаление сложных CSS-блоков (сдвиги, невидимость, прозрачность и т.д.)
+            # 2. Удаление сложных CSS-блоков (с закрывающим тегом)
             text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
-            # 3. Удаление тегов с атрибутом hidden
+            # 2.1 Удаление таких же CSS-блоков, если они самозакрывающиеся или без закрывающего тега
+            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|dispaly\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|color\s*:\s*transparent|color\s*:\s*rgba\([^)]+,\s*0\)|font-size\s*:\s*0|line-height\s*:\s*0|position\s*:\s*absolute[^>]+left\s*:\s*-[0-9]+px|text-indent\s*:\s*-[0-9]+px|clip\s*:\s*rect|width\s*:\s*0[^>]+height\s*:\s*0)[^>]*>', '', text, flags=re.IGNORECASE)
+            
+            # 3. Удаление тегов с атрибутом hidden (с закрывающим и без)
             text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>', '', text, flags=re.IGNORECASE)
             
             # 4. Удаление белого/прозрачного шрифта <font>
             text = re.sub(r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff|transparent)["\']?[^>]*>.*?</font>', '', text, flags=re.IGNORECASE | re.DOTALL)
@@ -160,19 +161,19 @@ def clean_all_traps_advanced(filepath):
             text = re.sub(r'\\(?:textcolor|color)\s*\{\s*(?:white|\#ffffff|\#fff|transparent)\s*\}\s*\{.*?\}', '', text, flags=re.IGNORECASE | re.DOTALL)
             
             # 6. Очистка всплывающих подсказок (title) из Markdown-ссылок
-            # Было: [текст](url "Секретный промпт") -> Стало: [текст](url)
             text = re.sub(r'(\[[^\]]*\]\([^)\s]+)\s+["\'][^"\']+["\'](\))', r'\1\2', text)
             
             # 7. Очистка alt-текста у Markdown-картинок -> ![image](link.jpg)
             text = re.sub(r'!\[.*?\](\(.*?\))', r'![image]\1', text)
             
-            # 8. Очистка атрибутов (alt, title, aria-label) у HTML-тегов -> заменяем на "image" или "info"
+            # 8. Очистка уязвимых атрибутов (alt, title, aria-label, note, data-*) у любых HTML-тегов
             def clean_html_attributes(match):
                 tag = match.group(0)
-                tag = re.sub(r'(alt|title|aria-label)\s*=\s*["\'].*?["\']', r'\1="info"', tag, flags=re.IGNORECASE)
+                # Заменяем содержимое атрибута на слово "info"
+                tag = re.sub(r'(alt|title|aria-label|note|data-[a-zA-Z0-9\-]+)\s*=\s*["\'].*?["\']', r'\1="info"', tag, flags=re.IGNORECASE)
                 return tag
             
-            text = re.sub(r'<(?:img|div|span|a|p)[^>]+>', clean_html_attributes, text, flags=re.IGNORECASE)
+            text = re.sub(r'<[a-zA-Z0-9]+[^>]+>', clean_html_attributes, text, flags=re.IGNORECASE)
             
             # Сохраняем очищенный текст
             cell['source'] = [text]
