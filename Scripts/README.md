@@ -48,13 +48,18 @@ def find_hidden_traps(notebook_path):
     print(f"\nАнализ файла: {notebook_path}\n" + "="*50)
     
     patterns = {
-        "1. HTML-комментарий": r'<!--(.*?)-->',
-        "2. Скрытый CSS-стиль (невидимость, белый текст)": 
-            r'<[^>]*\bstyle\s*=\s*["\'][^"\']*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^"\']*["\'][^>]*>(.*?)</[^>]+>',
-        "3. HTML атрибут 'hidden'": r'<[^>]*\bhidden\b[^>]*>(.*?)</[^>]+>',
-        "4. Белый цвет текста (<font>)": r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff)["\']?[^>]*>(.*?)</font>',
-        "5. Alt-текст Markdown картинки": r'!\[(.*?)\]\([^)]+\)',
-        "6. Alt-текст HTML картинки": r'<img[^>]+alt\s*=\s*["\'](.*?)["\'][^>]*>'
+        "1. HTML-комментарий": 
+            r'<!--(?P<text>.*?)-->',
+        "2. Скрытый CSS-стиль (display:none, невидимость, белый текст)": 
+            r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^>]*>(?P<text>.*?)</\1>',
+        "3. HTML атрибут 'hidden'": 
+            r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>(?P<text>.*?)</\1>',
+        "4. Белый цвет текста (<font>)": 
+            r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff)["\']?[^>]*>(?P<text>.*?)</font>',
+        "5. Alt-текст Markdown картинки": 
+            r'!\[(?P<text>.*?)\]\([^)]+\)',
+        "6. Alt-текст HTML картинки": 
+            r'<img[^>]+alt\s*=\s*["\'](?P<text>.*?)["\'][^>]*>'
     }
 
     trap_count = 0
@@ -65,9 +70,8 @@ def find_hidden_traps(notebook_path):
             found_in_cell = []
 
             for trap_type, pattern in patterns.items():
-                matches = re.findall(pattern, source, flags=re.IGNORECASE | re.DOTALL)
-                for match in matches:
-                    text = match.strip()
+                for match in re.finditer(pattern, source, flags=re.IGNORECASE | re.DOTALL):
+                    text = match.group('text').strip()
                     if text: 
                         found_in_cell.append(f"  [{trap_type}]:\n    > {text}\n")
                         trap_count += 1
@@ -129,22 +133,26 @@ def clean_all_traps(filepath):
             text = "".join(cell.get('source', []))
             
             # 1. Удаление HTML-комментариев
-            text = re.sub(r'<!--(.*?)-->', '', text, flags=re.DOTALL)
+            text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
             
-            # 2. Удаление скрытых блоков (display: none, opacity: 0, белый текст и т.д.)
-            text = re.sub(r'<[^>]*\bstyle\s*=\s*["\'][^"\']*(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^"\']*["\'][^>]*>.*?</[^>]+>', '', text, flags=re.IGNORECASE | re.DOTALL)
+            # 2. Удаление скрытых блоков (display: none, невидимость и т.д.)
+            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bstyle\s*=\s*["\']?[^>]*?(?:display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|color\s*:\s*white|color\s*:\s*\#ffffff|color\s*:\s*\#fff|font-size\s*:\s*0)[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
             # 3. Удаление тегов с атрибутом hidden
-            text = re.sub(r'<[^>]*\bhidden\b[^>]*>.*?</[^>]+>', '', text, flags=re.IGNORECASE | re.DOTALL)
+            text = re.sub(r'<([a-zA-Z0-9]+)[^>]*\bhidden\b[^>]*>.*?</\1>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
-            # 4. Удаление белого шрифта через устаревший тег <font>
+            # 4. Удаление белого шрифта
             text = re.sub(r'<font[^>]+color\s*=\s*["\']?(?:white|\#ffffff|\#fff)["\']?[^>]*>.*?</font>', '', text, flags=re.IGNORECASE | re.DOTALL)
             
-            # 5. Жесткая очистка alt-текста картинок Markdown: ![Опасный текст](link.jpg) -> ![image](link.jpg)
+            # 5. Очистка alt-текста картинок Markdown: ![Любой текст](link.jpg) -> ![image](link.jpg)
             text = re.sub(r'!\[.*?\](\(.*?\))', r'![image]\1', text)
             
-            # 6. Жесткая очистка alt-текста HTML-картинок: alt="Опасный текст" -> alt="image"
-            text = re.sub(r'alt\s*=\s*["\'].*?["\']', 'alt="image"', text, flags=re.IGNORECASE)
+            # 6. Очистка alt-текста HTML-картинок
+            def replace_html_alt(match):
+                img_tag = match.group(0)
+                return re.sub(r'alt\s*=\s*["\'].*?["\']', 'alt="image"', img_tag, flags=re.IGNORECASE)
+            
+            text = re.sub(r'<img[^>]+>', replace_html_alt, text, flags=re.IGNORECASE)
             
             # Сохраняем очищенный текст
             cell['source'] = [text]
